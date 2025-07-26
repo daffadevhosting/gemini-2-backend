@@ -18,7 +18,10 @@ Selamat datang di repository backend untuk AI Assistant toko online **"L Y Я A"
   (Tambahkan jika ingin otomatisasi website sepenuhnya via chat prompt.)
 
 - **Manajemen Riwayat Chat**  
-  Menyimpan dan mengambil riwayat percakapan per pengguna menggunakan Cloudflare KV.
+  Menyimpan dan mengambil riwayat percakapan bahkan item product di keranjang belanja per pengguna menggunakan Cloudflare KV.
+
+- **Manajemen Keranjang Belanja**  
+  Menyimpan, mengambil, dan menghapus item product dari keranjang belanja per pengguna menggunakan `simpleCart.js` modifikasi dari `MojoDesign`.
 
 - **Pembatasan Laju (Rate Limiting)**  
   Membatasi jumlah pesan per pengguna per hari untuk mencegah penyalahgunaan dan mengelola kuota API.
