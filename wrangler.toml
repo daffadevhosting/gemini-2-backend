@@ -1,0 +1,26 @@
+name = "gemini-2"
+main = "src/worker.js"
+workers_dev = true
+compatibility_date = "2025-07-25"
+
+[observability]
+enabled = true
+
+[vars]
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_API_KEY = "AIza****************"
+GEMINI_API_KEY_1 = "AIza****************"
+GEMINI_API_KEY_2 = "AIza****************"
+GEMINI_API_KEY_3 = "AIza****************"
+GEMINI_API_KEY_4 = "AIza****************"
+CORS_ORIGIN = "https://websitekamu.github.io"
+CORS_ORIGIN_LOCAL = "http://localhost:5500"
+
+[[kv_namespaces]]
+binding = "CHAT_HISTORY_KV"
+id = "id_kv_kamu"
+
+[[kv_namespaces]]
+binding = "GEMINI_KEY_QUOTA_KV"
+id = "id_kv_kamu"
+
