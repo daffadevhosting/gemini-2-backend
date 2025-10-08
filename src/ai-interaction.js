@@ -9,7 +9,6 @@ const SAFETY_SETTINGS = [
     { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
 ];
 
-const geminiModel = "gemini-2.5-flash"
 const GENERATION_CONFIG = {
     temperature: 0.5,
     topK: 40,
@@ -18,7 +17,7 @@ const GENERATION_CONFIG = {
 };
 
 /**
- * Membangun prompt sistem untuk Gemini berdasarkan produk, keranjang, dan riwayat.
+ * Membangun prompt sistem untuk AI berdasarkan produk, keranjang, dan riwayat.
  * @param {Array} products - Daftar produk yang tersedia.
  * @param {Array} cartItems - Item di keranjang pengguna.
  * @returns {string} Prompt sistem yang komprehensif.
@@ -84,7 +83,7 @@ Instruksi Anda:
  * @param {Array} history - Riwayat percakapan yang sudah ada.
  * @param {string} currentUserMessageText - Pesan terbaru dari pengguna (human-readable).
  * @param {Object|null} aiStructuredInput - Payload JSON terstruktur untuk AI dari pesan terbaru pengguna.
- * @returns {Array} Array objek pesan untuk API Gemini.
+ * @returns {Array} Array objek pesan untuk API AI.
  */
 function buildConversationHistory(history, currentUserMessageText, aiStructuredInput) {
     const conversation = history.map(entry => {
@@ -102,8 +101,8 @@ function buildConversationHistory(history, currentUserMessageText, aiStructuredI
             }
         }
         return {
-            role: entry.role === 'user' ? 'user' : 'model',
-            parts: [{ text: textContent }]
+            role: entry.role === 'user' ? 'user' : 'assistant',
+            content: textContent
         };
     });
 
@@ -112,13 +111,13 @@ function buildConversationHistory(history, currentUserMessageText, aiStructuredI
         // Jika ada input terstruktur, itu yang AI harus proses
         conversation.push({
             role: 'user',
-            parts: [{ text: JSON.stringify(aiStructuredInput) }] // AI akan memproses JSON ini
+            content: JSON.stringify(aiStructuredInput) // AI akan memproses JSON ini
         });
     } else {
         // Jika tidak ada input terstruktur, gunakan pesan teks biasa
         conversation.push({
             role: 'user',
-            parts: [{ text: currentUserMessageText }]
+            content: currentUserMessageText
         });
     }
 
@@ -126,61 +125,37 @@ function buildConversationHistory(history, currentUserMessageText, aiStructuredI
 }
 
 /**
- * Mengirim permintaan ke Gemini API.
- * @param {string} geminiApiKey - Kunci API Gemini.
+ * Mengirim permintaan ke Cloudflare Workers AI.
+ * @param {any} ai - AI binding dari Cloudflare Workers.
  * @param {Array} products - Daftar produk.
  * @param {Array} cartItems - Item di keranjang.
  * @param {Array} history - Riwayat chat.
  * @param {string} userMessageText - Pesan pengguna (human-readable) untuk prompt history.
  * @param {Object|null} aiStructuredInput - Payload JSON terstruktur untuk AI dari pesan terbaru.
- * @returns {Promise<string>} Respons dari Gemini.
+ * @returns {Promise<string>} Respons dari AI.
  */
-export async function getGeminiResponse(geminiApiKey, products, cartItems, history, userMessageText, aiStructuredInput) {
+export async function getAIResponse(ai, products, cartItems, history, userMessageText, aiStructuredInput) {
     const systemPrompt = buildSystemPrompt(products, cartItems);
-    // [MODIFIED] Meneruskan aiStructuredInput ke buildConversationHistory
     const conversation = buildConversationHistory(history, userMessageText, aiStructuredInput);
 
-    const fullConversation = [{
-        role: "user",
-        parts: [{ text: systemPrompt }]
-    }, {
-        role: "model",
-        parts: [{ text: "Baik, saya siap membantu. Ada yang bisa saya bantu hari ini?" }]
-    }, ...conversation];
+    const messages = [
+        {
+            role: "system",
+            content: systemPrompt
+        },
+        ...conversation
+    ];
 
-    try { // gemini-2.0-flash
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                contents: fullConversation,
-                safetySettings: SAFETY_SETTINGS,
-                generationConfig: GENERATION_CONFIG,
-            }),
+    try {
+        const response = await ai.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+            messages,
+            ...GENERATION_CONFIG
         });
 
-        const data = await response.json();
-        
-        if (!response.ok) {
-            console.error("Gemini API Error:", data);
-            let errorMessage = "Terjadi kesalahan saat menghubungi AI.";
-            if (data.error && data.error.message) {
-                errorMessage = `Gemini API Error: ${data.error.message}`;
-            }
-            throw new Error(errorMessage);
-        }
-
-        if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
-            return data.candidates[0].content.parts[0].text;
-        } else {
-            console.warn("Unexpected Gemini response structure:", data);
-            return "Maaf, saya tidak dapat memproses permintaan Anda saat ini.";
-        }
+        return response.response;
 
     } catch (error) {
-        console.error("Error calling Gemini API:", error);
-        throw error;
+        console.error("Error calling Cloudflare AI:", error);
+        throw new Error(`AI Error: ${error.message}`);
     }
 }
