@@ -7,7 +7,7 @@ compatibility_date = "2025-07-25"
 enabled = true
 
 [vars]
-CORS_ORIGIN = "https://websitekamu.github.io"
+CORS_ORIGIN = "https://plus62store-vite.vercel.app"
 CORS_ORIGIN_LOCAL = "http://localhost:5500"
 
 [[kv_namespaces]]
