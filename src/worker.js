@@ -12,15 +12,11 @@ export default {
         }
 
         // Pastikan variabel environment dan KV binding yang diperlukan tersedia
-        // Pengecekan GEMINI_API_KEY tidak lagi di sini, karena akan ditangani oleh api-handlers.js
         if (!env.CHAT_HISTORY_KV) {
             return new Response('Internal Server Error: CHAT_HISTORY_KV binding tidak terkonfigurasi.', { status: 500, headers: getCorsHeaders(env) });
         }
-        // Tambahkan pengecekan untuk KV Namespace baru
-        if (!env.GEMINI_KEY_QUOTA_KV) {
-            return new Response('Internal Server Error: GEMINI_KEY_QUOTA_KV binding tidak terkonfigurasi', { status: 500, headers: getCorsHeaders(env) });
-        }
 
+        // Hapus pengecekan GEMINI_KEY_QUOTA_KV karena tidak diperlukan lagi
 
         // Route requests
         if (url.pathname === '/ai-assistant') {
