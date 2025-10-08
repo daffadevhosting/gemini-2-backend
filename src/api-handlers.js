@@ -1,9 +1,9 @@
 // src/api-handlers.js
-import { MAX_CHAT_HISTORY_LENGTH, DAILY_RATE_LIMIT, PRODUCTS_JSON_URL, GEMINI_DAILY_KEY_LIMIT } from './constants';
-import { getGeminiResponse } from './ai-interaction';
+import { MAX_CHAT_HISTORY_LENGTH, DAILY_RATE_LIMIT, PRODUCTS_JSON_URL } from './constants';
+import { getAIResponse } from './ai-interaction';
 import { fetchProducts } from './data-fetcher';
 
-// Cache untuk menyimpan hitungan permintaan per pengguna per hari (pertahankan jika masih digunakan untuk user rate limit)
+// Cache untuk menyimpan hitungan permintaan per pengguna per hari
 const requestCountCache = {};
 
 /**
@@ -65,74 +65,14 @@ async function enforceRateLimit(userId, chatHistoryKv) {
     }
 
     // Tingkatkan hitungan dan simpan kembali ke KV
-    // Set expire_at untuk reset otomatis esok hari (24 jam dari sekarang)
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0); // Atur ke awal hari besok
+    tomorrow.setHours(0, 0, 0, 0);
     const expirationTtl = Math.max(0, Math.floor((tomorrow.getTime() - Date.now()) / 1000));
 
     await chatHistoryKv.put(kvKey, (currentCount + 1).toString(), { expirationTtl: expirationTtl });
     return true;
 }
-
-
-// Helper untuk mendapatkan semua API key Gemini dari environment
-function getAllGeminiApiKeys(env) {
-    const keys = [];
-    let i = 1;
-    while (true) {
-        const key = env[`GEMINI_API_KEY_${i}`];
-        if (key) {
-            keys.push(key);
-            i++;
-        } else {
-            break;
-        }
-    }
-    // Juga sertakan GEMINI_API_KEY tanpa angka jika ada
-    if (env.GEMINI_API_KEY && !keys.includes(env.GEMINI_API_KEY)) {
-        keys.unshift(env.GEMINI_API_KEY); // Menambahkan ke awal daftar
-    }
-    return keys;
-}
-
-// Helper untuk mendapatkan tanggal hari ini dalam format YYYY-MM-DD
-function getTodayDateString() {
-    const today = new Date();
-    return today.toISOString().split('T')[0]; // YYYY-MM-DD
-}
-
-/**
- * Mencari API key Gemini berikutnya yang tersedia (belum mencapai batas pemakaian harian kustom).
- * Akan mereset penggunaan di KV jika tanggalnya berbeda (hari baru).
- * @param {object} env - Objek environment.
- * @param {Array<string>} allKeys - Array dari semua API key yang tersedia.
- * @param {KVNamespace} apiKeyUsageKv - KV Namespace untuk melacak penggunaan API key.
- * @returns {Promise<string|null>} API key yang tersedia, atau null jika semua sudah habis.
- */
-async function findNextAvailableApiKey(env, allKeys, apiKeyUsageKv) {
-    const todayDate = getTodayDateString();
-
-    for (const key of allKeys) {
-        const kvKey = `gemini_key_usage:${key}`; // Format key di KV
-        let usageData = await apiKeyUsageKv.get(kvKey, { type: 'json' });
-
-        if (!usageData || usageData.date !== todayDate) {
-            // Jika tidak ada data atau tanggalnya berbeda (hari baru), reset hitungan
-            usageData = { count: 0, date: todayDate };
-            // Simpan perubahan ke KV. Atur expiration untuk otomatis bersih setelah ~24 jam
-            // atau biarkan tanpa expiration untuk direset manual/oleh logic ini
-            await apiKeyUsageKv.put(kvKey, JSON.stringify(usageData));
-        }
-
-        if (usageData.count < GEMINI_DAILY_KEY_LIMIT) {
-            // Key ini masih tersedia
-            return key;
-        }
-    }
-    return null; // Tidak ada key yang tersedia
-}
-
 
 /**
  * Handle permintaan AI Assistant.
@@ -156,14 +96,9 @@ export async function handleAiAssistant(request, env) {
         return jsonResponse({ error: 'KV Namespace CHAT_HISTORY_KV not configured.' }, 500, env);
     }
 
-    const apiKeyUsageKv = env.GEMINI_KEY_QUOTA_KV;
-    if (!apiKeyUsageKv) {
-        return jsonResponse({ error: 'KV Namespace GEMINI_KEY_QUOTA_KV not configured.' }, 500, env);
-    }
-
-    const allGeminiApiKeys = getAllGeminiApiKeys(env);
-    if (allGeminiApiKeys.length === 0) {
-        return jsonResponse({ error: 'Tidak ada GEMINI_API_KEY yang dikonfigurasi di environment variables.' }, 500, env);
+    // Periksa apakah AI binding tersedia
+    if (!env.AI) {
+        return jsonResponse({ error: 'AI binding not configured.' }, 500, env);
     }
 
     // Terapkan batas laju permintaan harian per pengguna
@@ -182,38 +117,14 @@ export async function handleAiAssistant(request, env) {
         console.error("Error fetching chat history from KV:", e);
     }
 
-    // --- LOGIKA ROTASI API KEY PROAKTIF ---
-    // Cari API key berikutnya yang masih tersedia
-    const currentGeminiApiKey = await findNextAvailableApiKey(env, allGeminiApiKeys, apiKeyUsageKv);
-
-    if (!currentGeminiApiKey) {
-        // Jika semua API key sudah mencapai batas penggunaan hari ini
-        console.warn("Semua API key Gemini telah mencapai batas penggunaan hari ini. Tidak dapat memproses permintaan.");
-        return jsonResponse({ error: 'Maaf, semua kapasitas AI kami sedang penuh. Silakan coba lagi nanti.' }, 503, env);
-    }
-
     let aiReply;
     try {
         const products = await fetchProducts();
-        // Panggil getGeminiResponse dengan API key yang sudah dipilih secara proaktif
-        aiReply = await getGeminiResponse(currentGeminiApiKey, products, cartItems, history, message, aiStructuredInput);
-
-        // Setelah berhasil, tingkatkan hitungan penggunaan untuk API key yang BARU SAJA DIGUNAKAN
-        const kvKey = `gemini_key_usage:${currentGeminiApiKey}`;
-        let usageData = await apiKeyUsageKv.get(kvKey, { type: 'json' });
-        const todayDate = getTodayDateString();
-
-        // Safety check: Pastikan data penggunaan sudah terbaru atau diinisialisasi
-        if (!usageData || usageData.date !== todayDate) {
-            usageData = { count: 0, date: todayDate };
-        }
-        usageData.count++;
-        await apiKeyUsageKv.put(kvKey, JSON.stringify(usageData)); // Simpan kembali ke KV
+        // Panggil getAIResponse dengan AI binding
+        aiReply = await getAIResponse(env.AI, products, cartItems, history, message, aiStructuredInput);
 
     } catch (error) {
-        console.error("Error during AI response generation with current key:", currentGeminiApiKey, error);
-        // Error yang terjadi di sini biasanya bukan karena kuota (karena sudah dicegah proaktif)
-        // tapi bisa jadi masalah lain dari Gemini API.
+        console.error("Error during AI response generation:", error);
         return jsonResponse({ error: error.message || 'Terjadi kesalahan internal saat menghubungi AI.' }, 500, env);
     }
 
