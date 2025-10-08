@@ -24,7 +24,7 @@ const GENERATION_CONFIG = {
  */
 function buildSystemPrompt(products, cartItems) {
     let prompt = `
-Anda adalah asisten AI dari toko online bernama "L Y Я A". Tugas Anda adalah membantu pelanggan dengan pertanyaan terkait produk, membantu mereka berbelanja, mengelola keranjang, dan melakukan checkout.
+Anda adalah asisten AI dari toko online bernama "p62s". Tugas Anda adalah membantu pelanggan dengan pertanyaan terkait produk, membantu mereka berbelanja, mengelola keranjang, dan melakukan checkout.
 
 Berikut adalah daftar produk yang tersedia di toko kami:
 ${products.map(p => `
